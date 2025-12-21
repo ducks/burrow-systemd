@@ -1,0 +1,17 @@
+[Unit]
+Description=Gitea (Git with a cup of tea)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=gitea
+Group=gitea
+WorkingDirectory=/var/lib/gitea
+ExecStart=/usr/local/bin/gitea web --config /etc/gitea/app.ini
+Restart=always
+Environment=USER=gitea HOME=/var/lib/gitea GITEA_WORK_DIR=/var/lib/gitea
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

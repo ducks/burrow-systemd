@@ -1,0 +1,225 @@
+#!/bin/bash
+set -e
+
+# Bootstrap script - sets up burrow infrastructure on a fresh system
+# Usage: sudo ./bin/bootstrap
+
+echo "=== Burrow Bootstrap (systemd) ==="
+echo ""
+
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+    echo "❌ This script must be run as root (use sudo)"
+    exit 1
+fi
+
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_DIR"
+
+# Function to generate a secure random password
+generate_password() {
+    openssl rand -base64 32 | tr -d "=+/" | cut -c1-32
+}
+
+# Function to generate Gitea tokens
+generate_token() {
+    gitea generate secret $1 2>/dev/null || openssl rand -base64 32 | tr -d "=+/" | cut -c1-64
+}
+
+echo "Step 1: Installing packages..."
+echo ""
+
+# Detect package manager and install dependencies
+if command -v pacman &> /dev/null; then
+    echo "Detected Arch Linux (pacman)"
+    pacman -Syu --noconfirm
+    pacman -S --noconfirm caddy postgresql wget
+elif command -v apt-get &> /dev/null; then
+    echo "Detected Debian/Ubuntu (apt)"
+    apt-get update
+    apt-get install -y caddy postgresql postgresql-contrib wget
+elif command -v dnf &> /dev/null; then
+    echo "Detected Fedora/RHEL (dnf)"
+    dnf install -y caddy postgresql-server postgresql-contrib wget
+else
+    echo "❌ Unsupported package manager. Please install manually:"
+    echo "   - caddy"
+    echo "   - postgresql"
+    echo "   - wget"
+    exit 1
+fi
+
+echo ""
+echo "Step 2: Creating system users..."
+echo ""
+
+# Create users for services
+id -u gitea &>/dev/null || useradd -r -s /bin/bash -d /var/lib/gitea -m gitea
+id -u goatcounter &>/dev/null || useradd -r -s /bin/bash -d /var/lib/goatcounter -m goatcounter
+
+echo "✓ Created users: gitea, goatcounter"
+echo ""
+echo "Step 3: Downloading binaries..."
+echo ""
+
+# Download Gitea
+GITEA_VERSION="1.21.5"
+if [ ! -f /usr/local/bin/gitea ]; then
+    echo "Downloading Gitea ${GITEA_VERSION}..."
+    wget -O /usr/local/bin/gitea "https://dl.gitea.com/gitea/${GITEA_VERSION}/gitea-${GITEA_VERSION}-linux-amd64"
+    chmod +x /usr/local/bin/gitea
+    echo "✓ Gitea installed"
+else
+    echo "✓ Gitea already installed"
+fi
+
+# Download GoatCounter
+GOATCOUNTER_VERSION="2.5.0"
+if [ ! -f /usr/local/bin/goatcounter ]; then
+    echo "Downloading GoatCounter ${GOATCOUNTER_VERSION}..."
+    wget -O /tmp/goatcounter.gz "https://github.com/arp242/goatcounter/releases/download/v${GOATCOUNTER_VERSION}/goatcounter-v${GOATCOUNTER_VERSION}-linux-amd64.gz"
+    gunzip /tmp/goatcounter.gz
+    mv /tmp/goatcounter /usr/local/bin/goatcounter
+    chmod +x /usr/local/bin/goatcounter
+    echo "✓ GoatCounter installed"
+else
+    echo "✓ GoatCounter already installed"
+fi
+
+echo ""
+echo "Step 4: Creating directories..."
+echo ""
+
+# Create directories
+mkdir -p /etc/gitea /var/lib/gitea/{repositories,data,log}
+mkdir -p /var/lib/goatcounter-jg /var/lib/goatcounter-dv
+mkdir -p /etc/caddy
+
+# Set permissions
+chown -R gitea:gitea /var/lib/gitea /etc/gitea
+chown -R goatcounter:goatcounter /var/lib/goatcounter-jg /var/lib/goatcounter-dv
+
+echo "✓ Directories created and permissions set"
+echo ""
+echo "Step 5: Initializing PostgreSQL..."
+echo ""
+
+# Initialize PostgreSQL if needed
+if [ -d /var/lib/postgres/data ]; then
+    echo "✓ PostgreSQL already initialized"
+else
+    sudo -u postgres initdb -D /var/lib/postgres/data
+    echo "✓ PostgreSQL initialized"
+fi
+
+# Start PostgreSQL
+systemctl start postgresql
+systemctl enable postgresql
+
+# Wait for PostgreSQL to be ready
+sleep 3
+
+# Create database and user for Gitea
+echo "Creating Gitea database..."
+
+GITEA_DB_PASSWORD=$(generate_password)
+
+sudo -u postgres psql -v ON_ERROR_STOP=0 <<-EOSQL
+    -- Create database and user
+    DROP DATABASE IF EXISTS gitea;
+    DROP USER IF EXISTS gitea;
+    CREATE DATABASE gitea;
+    CREATE USER gitea WITH PASSWORD '${GITEA_DB_PASSWORD}';
+    GRANT ALL PRIVILEGES ON DATABASE gitea TO gitea;
+    \c gitea
+    GRANT ALL ON SCHEMA public TO gitea;
+EOSQL
+
+echo "✓ PostgreSQL database created"
+echo ""
+echo "Step 6: Generating configuration..."
+echo ""
+
+# Generate Gitea tokens
+GITEA_SECRET_KEY=$(gitea generate secret SECRET_KEY 2>/dev/null || openssl rand -base64 64 | tr -d "=+/" | cut -c1-64)
+GITEA_INTERNAL_TOKEN=$(gitea generate secret INTERNAL_TOKEN 2>/dev/null || openssl rand -base64 64 | tr -d "=+/" | cut -c1-172)
+
+# Create .env file
+cat > .env <<EOF
+# PostgreSQL password for gitea user
+GITEA_DB_PASSWORD=${GITEA_DB_PASSWORD}
+
+# Gitea security keys
+GITEA_SECRET_KEY=${GITEA_SECRET_KEY}
+GITEA_INTERNAL_TOKEN=${GITEA_INTERNAL_TOKEN}
+EOF
+
+chmod 600 .env
+
+echo "✓ Created .env with secure credentials"
+echo ""
+echo "Step 7: Copying configuration files..."
+echo ""
+
+# Copy Gitea config and substitute passwords
+sed -e "s|__GITEA_DB_PASSWORD__|${GITEA_DB_PASSWORD}|g" \
+    -e "s|__SECRET_KEY__|${GITEA_SECRET_KEY}|g" \
+    -e "s|__INTERNAL_TOKEN__|${GITEA_INTERNAL_TOKEN}|g" \
+    config/gitea/app.ini > /etc/gitea/app.ini
+
+chown gitea:gitea /etc/gitea/app.ini
+chmod 640 /etc/gitea/app.ini
+
+# Copy Caddyfile
+cp config/Caddyfile /etc/caddy/Caddyfile
+
+echo "✓ Configuration files copied"
+echo ""
+echo "Step 8: Installing systemd services..."
+echo ""
+
+# Copy systemd service files
+cp systemd/*.service /etc/systemd/system/
+
+# Reload systemd
+systemctl daemon-reload
+
+echo "✓ Systemd services installed"
+echo ""
+echo "Step 9: Migrating existing GoatCounter databases (if they exist)..."
+echo ""
+
+# Check for existing GoatCounter databases
+if [ -f ~/goatcounter/goatcounter.db ]; then
+    echo "Found existing GoatCounter database for jakegoldsborough.com"
+    cp ~/goatcounter/goatcounter.db /var/lib/goatcounter-jg/goatcounter.db
+    chown goatcounter:goatcounter /var/lib/goatcounter-jg/goatcounter.db
+    echo "✓ Migrated jakegoldsborough.com database"
+fi
+
+if [ -f ~/goatcounter-date-ver/goatcounter.db ]; then
+    echo "Found existing GoatCounter database for date-ver.com"
+    cp ~/goatcounter-date-ver/goatcounter.db /var/lib/goatcounter-dv/goatcounter.db
+    chown goatcounter:goatcounter /var/lib/goatcounter-dv/goatcounter.db
+    echo "✓ Migrated date-ver.com database"
+fi
+
+echo ""
+echo "=== Bootstrap Complete ==="
+echo ""
+echo "⚠️  IMPORTANT: Secure your .env file!"
+echo "   - It contains sensitive credentials"
+echo "   - It is git-ignored by default"
+echo "   - Back it up securely"
+echo ""
+echo "Next steps:"
+echo "  1. Review configuration: cat .env"
+echo "  2. Enable and start services: ./bin/deploy"
+echo "  3. Check service status: systemctl status gitea caddy goatcounter-jg goatcounter-dv"
+echo "  4. Check logs: journalctl -u gitea -f"
+echo ""
+echo "Services will be available at:"
+echo "  - https://code.jakegoldsborough.com (Gitea)"
+echo "  - https://stats.jakegoldsborough.com (GoatCounter)"
+echo "  - https://stats.date-ver.com (GoatCounter)"
+echo ""

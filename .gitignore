@@ -1,0 +1,9 @@
+# Environment variables (contains secrets)
+.env
+
+# Local data directories
+data/
+
+# Backups
+*.tar.gz
+backups/

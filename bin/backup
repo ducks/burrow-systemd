@@ -1,0 +1,77 @@
+#!/bin/bash
+set -e
+
+# Backup script - creates backups of all databases and important data
+# Usage: sudo ./bin/backup
+
+echo "=== Burrow Backup ==="
+echo ""
+
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+    echo "❌ This script must be run as root (use sudo)"
+    exit 1
+fi
+
+# Create backup directory with timestamp
+BACKUP_DIR="$HOME/burrow-backups/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$BACKUP_DIR"
+
+echo "Backup directory: $BACKUP_DIR"
+echo ""
+
+# Backup PostgreSQL (Gitea database)
+echo "Backing up PostgreSQL (Gitea)..."
+sudo -u postgres pg_dump gitea > "$BACKUP_DIR/gitea-postgres.sql"
+echo "✓ PostgreSQL backup: $BACKUP_DIR/gitea-postgres.sql"
+
+# Backup GoatCounter databases
+echo ""
+echo "Backing up GoatCounter databases..."
+
+if [ -f /var/lib/goatcounter-jg/goatcounter.db ]; then
+    cp /var/lib/goatcounter-jg/goatcounter.db "$BACKUP_DIR/goatcounter-jg.db"
+    echo "✓ GoatCounter (jakegoldsborough.com): $BACKUP_DIR/goatcounter-jg.db"
+fi
+
+if [ -f /var/lib/goatcounter-dv/goatcounter.db ]; then
+    cp /var/lib/goatcounter-dv/goatcounter.db "$BACKUP_DIR/goatcounter-dv.db"
+    echo "✓ GoatCounter (date-ver.com): $BACKUP_DIR/goatcounter-dv.db"
+fi
+
+# Backup Gitea data directory (repositories, avatars, etc.)
+echo ""
+echo "Backing up Gitea data..."
+tar -czf "$BACKUP_DIR/gitea-data.tar.gz" -C /var/lib/gitea repositories data 2>/dev/null || true
+echo "✓ Gitea data: $BACKUP_DIR/gitea-data.tar.gz"
+
+# Backup configuration files
+echo ""
+echo "Backing up configuration..."
+mkdir -p "$BACKUP_DIR/config"
+cp /etc/caddy/Caddyfile "$BACKUP_DIR/config/" 2>/dev/null || true
+cp /etc/gitea/app.ini "$BACKUP_DIR/config/" 2>/dev/null || true
+echo "✓ Configuration: $BACKUP_DIR/config/"
+
+# Compress the entire backup
+echo ""
+echo "Compressing backup..."
+cd "$(dirname "$BACKUP_DIR")"
+BACKUP_NAME="$(basename "$BACKUP_DIR")"
+tar -czf "${BACKUP_NAME}.tar.gz" "$BACKUP_NAME"
+rm -rf "$BACKUP_NAME"
+
+echo "✓ Backup complete: $(dirname "$BACKUP_DIR")/${BACKUP_NAME}.tar.gz"
+echo ""
+echo "=== Backup Summary ==="
+echo "Location: $(dirname "$BACKUP_DIR")/${BACKUP_NAME}.tar.gz"
+echo "Size: $(du -h "$(dirname "$BACKUP_DIR")/${BACKUP_NAME}.tar.gz" | cut -f1)"
+echo ""
+echo "To restore:"
+echo "  1. Extract: tar -xzf ${BACKUP_NAME}.tar.gz"
+echo "  2. Stop services: systemctl stop gitea goatcounter-jg goatcounter-dv"
+echo "  3. Restore PostgreSQL: sudo -u postgres psql gitea < gitea-postgres.sql"
+echo "  4. Restore SQLite databases to /var/lib/goatcounter-*/"
+echo "  5. Restore Gitea data: tar -xzf gitea-data.tar.gz -C /var/lib/gitea"
+echo "  6. Start services: systemctl start gitea goatcounter-jg goatcounter-dv"
+echo ""

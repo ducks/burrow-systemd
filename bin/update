@@ -1,0 +1,144 @@
+#!/bin/bash
+set -e
+
+# Update script - updates service binaries to latest versions
+# Usage: sudo ./bin/update [service]
+#   service: gitea, goatcounter, caddy, or all (default: all)
+
+echo "=== Burrow Update ===" echo ""
+
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+    echo "❌ This script must be run as root (use sudo)"
+    exit 1
+fi
+
+SERVICE="${1:-all}"
+
+update_gitea() {
+    echo "Updating Gitea..."
+
+    # Get current version
+    CURRENT=$(/usr/local/bin/gitea --version 2>/dev/null | grep -oP '(?<=version )[0-9.]+' || echo "unknown")
+    echo "Current version: $CURRENT"
+
+    # Fetch latest version from GitHub API
+    LATEST=$(curl -s https://api.github.com/repos/go-gitea/gitea/releases/latest | grep -oP '"tag_name": "v\K[^"]+')
+    echo "Latest version: $LATEST"
+
+    if [ "$CURRENT" = "$LATEST" ]; then
+        echo "✓ Gitea is already up to date"
+        return
+    fi
+
+    echo "Downloading Gitea ${LATEST}..."
+    wget -O /tmp/gitea "https://dl.gitea.com/gitea/${LATEST}/gitea-${LATEST}-linux-amd64"
+
+    # Stop service
+    echo "Stopping Gitea..."
+    systemctl stop gitea
+
+    # Replace binary
+    chmod +x /tmp/gitea
+    mv /tmp/gitea /usr/local/bin/gitea
+
+    # Start service
+    echo "Starting Gitea..."
+    systemctl start gitea
+
+    echo "✓ Gitea updated to ${LATEST}"
+}
+
+update_goatcounter() {
+    echo "Updating GoatCounter..."
+
+    # Get current version
+    CURRENT=$(/usr/local/bin/goatcounter version 2>/dev/null | grep -oP 'version \K[0-9.]+' || echo "unknown")
+    echo "Current version: $CURRENT"
+
+    # Fetch latest version from GitHub API
+    LATEST=$(curl -s https://api.github.com/repos/arp242/goatcounter/releases/latest | grep -oP '"tag_name": "v\K[^"]+')
+    echo "Latest version: $LATEST"
+
+    if [ "$CURRENT" = "$LATEST" ]; then
+        echo "✓ GoatCounter is already up to date"
+        return
+    fi
+
+    echo "Downloading GoatCounter ${LATEST}..."
+    wget -O /tmp/goatcounter.gz "https://github.com/arp242/goatcounter/releases/download/v${LATEST}/goatcounter-v${LATEST}-linux-amd64.gz"
+    gunzip -f /tmp/goatcounter.gz
+
+    # Stop services
+    echo "Stopping GoatCounter services..."
+    systemctl stop goatcounter-jg goatcounter-dv
+
+    # Replace binary
+    chmod +x /tmp/goatcounter
+    mv /tmp/goatcounter /usr/local/bin/goatcounter
+
+    # Start services
+    echo "Starting GoatCounter services..."
+    systemctl start goatcounter-jg goatcounter-dv
+
+    echo "✓ GoatCounter updated to ${LATEST}"
+}
+
+update_caddy() {
+    echo "Updating Caddy..."
+
+    # Detect package manager
+    if command -v pacman &> /dev/null; then
+        echo "Updating via pacman..."
+        pacman -Sy caddy
+    elif command -v apt-get &> /dev/null; then
+        echo "Updating via apt..."
+        apt-get update
+        apt-get install --only-upgrade caddy
+    elif command -v dnf &> /dev/null; then
+        echo "Updating via dnf..."
+        dnf upgrade caddy
+    else
+        echo "⚠️  Could not detect package manager"
+        return 1
+    fi
+
+    # Reload Caddy
+    systemctl restart caddy
+
+    echo "✓ Caddy updated"
+}
+
+# Main update logic
+case "$SERVICE" in
+    gitea)
+        update_gitea
+        ;;
+    goatcounter)
+        update_goatcounter
+        ;;
+    caddy)
+        update_caddy
+        ;;
+    all)
+        update_gitea
+        echo ""
+        update_goatcounter
+        echo ""
+        update_caddy
+        ;;
+    *)
+        echo "❌ Unknown service: $SERVICE"
+        echo ""
+        echo "Usage: sudo ./bin/update [service]"
+        echo "  service: gitea, goatcounter, caddy, or all (default)"
+        exit 1
+        ;;
+esac
+
+echo ""
+echo "=== Update Complete ==="
+echo ""
+echo "Service status:"
+systemctl status gitea caddy goatcounter-jg goatcounter-dv --no-pager | grep -E "●|Active:"
+echo ""

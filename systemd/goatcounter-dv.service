@@ -1,0 +1,15 @@
+[Unit]
+Description=GoatCounter Analytics - stats.date-ver.com
+After=network.target
+
+[Service]
+Type=simple
+User=goatcounter
+Group=goatcounter
+WorkingDirectory=/var/lib/goatcounter-dv
+ExecStart=/usr/local/bin/goatcounter serve -listen localhost:8082 -db sqlite+/var/lib/goatcounter-dv/goatcounter.db
+Restart=always
+Environment=HOME=/var/lib/goatcounter-dv
+
+[Install]
+WantedBy=multi-user.target
