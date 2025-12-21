@@ -105,10 +105,10 @@ echo "Step 5: Initializing PostgreSQL..."
 echo ""
 
 # Initialize PostgreSQL if needed
-if [ -d /var/lib/postgres/data ]; then
+if [ -f /var/lib/postgres/data/PG_VERSION ]; then
     echo "✓ PostgreSQL already initialized"
 else
-    sudo -u postgres initdb -D /var/lib/postgres/data
+    sudo -u postgres initdb --locale=C.UTF-8 --encoding=UTF8 -D /var/lib/postgres/data
     echo "✓ PostgreSQL initialized"
 fi
 
