@@ -7,7 +7,7 @@ Type=simple
 User=goatcounter
 Group=goatcounter
 WorkingDirectory=/var/lib/goatcounter-jg
-ExecStart=/usr/local/bin/goatcounter serve -listen localhost:8081 -db sqlite+/var/lib/goatcounter-jg/goatcounter.db
+ExecStart=/usr/local/bin/goatcounter serve -listen localhost:8081 -tls none -db sqlite+/var/lib/goatcounter-jg/goatcounter.db
 Restart=always
 Environment=HOME=/var/lib/goatcounter-jg
 
