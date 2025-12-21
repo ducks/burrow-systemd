@@ -1,0 +1,17 @@
+[Unit]
+Description=Woodpecker CI Server
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=woodpecker
+Group=woodpecker
+WorkingDirectory=/var/lib/woodpecker
+EnvironmentFile=/etc/woodpecker/server.env
+ExecStart=/usr/local/bin/woodpecker-server
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

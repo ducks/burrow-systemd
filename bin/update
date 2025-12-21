@@ -3,7 +3,7 @@ set -e
 
 # Update script - updates service binaries to latest versions
 # Usage: sudo ./bin/update [service]
-#   service: gitea, goatcounter, caddy, or all (default: all)
+#   service: gitea, goatcounter, woodpecker, caddy, or all (default: all)
 
 echo "=== Burrow Update ===" echo ""
 
@@ -84,6 +84,42 @@ update_goatcounter() {
     echo "✓ GoatCounter updated to ${LATEST}"
 }
 
+update_woodpecker() {
+    echo "Updating Woodpecker..."
+
+    # Get current version
+    CURRENT=$(/usr/local/bin/woodpecker-server --version 2>/dev/null | grep -oP '(?<=version )[0-9.]+' || echo "unknown")
+    echo "Current version: $CURRENT"
+
+    # Fetch latest version from GitHub API
+    LATEST=$(curl -s https://api.github.com/repos/woodpecker-ci/woodpecker/releases/latest | grep -oP '"tag_name": "v\K[^"]+')
+    echo "Latest version: $LATEST"
+
+    if [ "$CURRENT" = "$LATEST" ]; then
+        echo "✓ Woodpecker is already up to date"
+        return
+    fi
+
+    echo "Downloading Woodpecker ${LATEST}..."
+    wget -O /tmp/woodpecker-server "https://github.com/woodpecker-ci/woodpecker/releases/download/v${LATEST}/woodpecker-server_linux_amd64"
+    wget -O /tmp/woodpecker-agent "https://github.com/woodpecker-ci/woodpecker/releases/download/v${LATEST}/woodpecker-agent_linux_amd64"
+
+    # Stop services
+    echo "Stopping Woodpecker services..."
+    systemctl stop woodpecker-server woodpecker-agent
+
+    # Replace binaries
+    chmod +x /tmp/woodpecker-server /tmp/woodpecker-agent
+    mv /tmp/woodpecker-server /usr/local/bin/woodpecker-server
+    mv /tmp/woodpecker-agent /usr/local/bin/woodpecker-agent
+
+    # Start services
+    echo "Starting Woodpecker services..."
+    systemctl start woodpecker-server woodpecker-agent
+
+    echo "✓ Woodpecker updated to ${LATEST}"
+}
+
 update_caddy() {
     echo "Updating Caddy..."
 
@@ -117,6 +153,9 @@ case "$SERVICE" in
     goatcounter)
         update_goatcounter
         ;;
+    woodpecker)
+        update_woodpecker
+        ;;
     caddy)
         update_caddy
         ;;
@@ -125,13 +164,15 @@ case "$SERVICE" in
         echo ""
         update_goatcounter
         echo ""
+        update_woodpecker
+        echo ""
         update_caddy
         ;;
     *)
         echo "❌ Unknown service: $SERVICE"
         echo ""
         echo "Usage: sudo ./bin/update [service]"
-        echo "  service: gitea, goatcounter, caddy, or all (default)"
+        echo "  service: gitea, goatcounter, woodpecker, caddy, or all (default)"
         exit 1
         ;;
 esac
@@ -140,5 +181,5 @@ echo ""
 echo "=== Update Complete ==="
 echo ""
 echo "Service status:"
-systemctl status gitea caddy goatcounter-jg goatcounter-dv --no-pager | grep -E "●|Active:"
+systemctl status gitea caddy goatcounter-jg goatcounter-dv woodpecker-server woodpecker-agent --no-pager | grep -E "●|Active:"
 echo ""

@@ -42,6 +42,20 @@ chown gitea:gitea /etc/gitea/app.ini
 chmod 640 /etc/gitea/app.ini
 echo "✓ Updated Gitea configuration"
 
+# Update Woodpecker config (substitute passwords from .env)
+sed -e "s|__WOODPECKER_DB_PASSWORD__|${WOODPECKER_DB_PASSWORD}|g" \
+    -e "s|__WOODPECKER_AGENT_SECRET__|${WOODPECKER_AGENT_SECRET}|g" \
+    -e "s|__GITEA_OAUTH_CLIENT_ID__|${GITEA_OAUTH_CLIENT_ID:-}|g" \
+    -e "s|__GITEA_OAUTH_CLIENT_SECRET__|${GITEA_OAUTH_CLIENT_SECRET:-}|g" \
+    config/woodpecker/server.env > /etc/woodpecker/server.env
+
+sed -e "s|__WOODPECKER_AGENT_SECRET__|${WOODPECKER_AGENT_SECRET}|g" \
+    config/woodpecker/agent.env > /etc/woodpecker/agent.env
+
+chown woodpecker:woodpecker /etc/woodpecker/server.env /etc/woodpecker/agent.env
+chmod 640 /etc/woodpecker/server.env /etc/woodpecker/agent.env
+echo "✓ Updated Woodpecker configuration"
+
 # Update systemd service files
 cp systemd/*.service /etc/systemd/system/
 systemctl daemon-reload
@@ -56,7 +70,7 @@ systemctl enable postgresql
 systemctl start postgresql || systemctl restart postgresql
 echo "✓ PostgreSQL running"
 
-# Enable and start services
+# Enable and start base services
 for service in gitea goatcounter-jg goatcounter-dv caddy; do
     systemctl enable $service
     systemctl restart $service
@@ -71,14 +85,44 @@ for service in gitea goatcounter-jg goatcounter-dv caddy; do
     fi
 done
 
+# Start Woodpecker services if OAuth is configured
+if [ -n "${GITEA_OAUTH_CLIENT_ID:-}" ] && [ -n "${GITEA_OAUTH_CLIENT_SECRET:-}" ]; then
+    echo ""
+    echo "Starting Woodpecker CI services..."
+    for service in woodpecker-server woodpecker-agent; do
+        systemctl enable $service
+        systemctl restart $service
+
+        sleep 1
+        if systemctl is-active --quiet $service; then
+            echo "✓ $service running"
+        else
+            echo "⚠️  $service failed to start"
+            echo "   Check logs: journalctl -u $service -n 50"
+        fi
+    done
+else
+    echo ""
+    echo "⚠️  Woodpecker CI not started - OAuth credentials not configured"
+    echo "   Add GITEA_OAUTH_CLIENT_ID and GITEA_OAUTH_CLIENT_SECRET to .env"
+    echo "   Then run ./bin/deploy again"
+fi
+
 echo ""
 echo "=== Deployment Complete ==="
 echo ""
 echo "Services status:"
-systemctl status gitea caddy goatcounter-jg goatcounter-dv --no-pager | grep -E "●|Active:"
+if [ -n "${GITEA_OAUTH_CLIENT_ID:-}" ] && [ -n "${GITEA_OAUTH_CLIENT_SECRET:-}" ]; then
+    systemctl status gitea caddy goatcounter-jg goatcounter-dv woodpecker-server woodpecker-agent --no-pager | grep -E "●|Active:"
+else
+    systemctl status gitea caddy goatcounter-jg goatcounter-dv --no-pager | grep -E "●|Active:"
+fi
 echo ""
 echo "Services available at:"
 echo "  - https://code.jakegoldsborough.com (Gitea)"
+if [ -n "${GITEA_OAUTH_CLIENT_ID:-}" ] && [ -n "${GITEA_OAUTH_CLIENT_SECRET:-}" ]; then
+    echo "  - https://ci.jakegoldsborough.com (Woodpecker CI)"
+fi
 echo "  - https://stats.jakegoldsborough.com (GoatCounter)"
 echo "  - https://stats.date-ver.com (GoatCounter)"
 echo ""
@@ -87,4 +131,8 @@ echo "  journalctl -u gitea -f"
 echo "  journalctl -u caddy -f"
 echo "  journalctl -u goatcounter-jg -f"
 echo "  journalctl -u goatcounter-dv -f"
+if [ -n "${GITEA_OAUTH_CLIENT_ID:-}" ] && [ -n "${GITEA_OAUTH_CLIENT_SECRET:-}" ]; then
+    echo "  journalctl -u woodpecker-server -f"
+    echo "  journalctl -u woodpecker-agent -f"
+fi
 echo ""
