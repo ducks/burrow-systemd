@@ -56,8 +56,9 @@ echo ""
 # Create users for services
 id -u gitea &>/dev/null || useradd -r -s /bin/bash -d /var/lib/gitea -m gitea
 id -u goatcounter &>/dev/null || useradd -r -s /bin/bash -d /var/lib/goatcounter -m goatcounter
+id -u woodpecker &>/dev/null || useradd -r -s /bin/bash -d /var/lib/woodpecker -m woodpecker
 
-echo "✓ Created users: gitea, goatcounter"
+echo "✓ Created users: gitea, goatcounter, woodpecker"
 echo ""
 echo "Step 3: Downloading binaries..."
 echo ""
@@ -86,6 +87,20 @@ else
     echo "✓ GoatCounter already installed"
 fi
 
+# Download Woodpecker
+WOODPECKER_VERSION="2.7.1"
+if [ ! -f /usr/local/bin/woodpecker-server ]; then
+    echo "Downloading Woodpecker ${WOODPECKER_VERSION}..."
+    wget -O /tmp/woodpecker-server "https://github.com/woodpecker-ci/woodpecker/releases/download/v${WOODPECKER_VERSION}/woodpecker-server_linux_amd64"
+    wget -O /tmp/woodpecker-agent "https://github.com/woodpecker-ci/woodpecker/releases/download/v${WOODPECKER_VERSION}/woodpecker-agent_linux_amd64"
+    chmod +x /tmp/woodpecker-server /tmp/woodpecker-agent
+    mv /tmp/woodpecker-server /usr/local/bin/woodpecker-server
+    mv /tmp/woodpecker-agent /usr/local/bin/woodpecker-agent
+    echo "✓ Woodpecker installed"
+else
+    echo "✓ Woodpecker already installed"
+fi
+
 echo ""
 echo "Step 4: Creating directories..."
 echo ""
@@ -93,11 +108,13 @@ echo ""
 # Create directories
 mkdir -p /etc/gitea /var/lib/gitea/{repositories,data,log}
 mkdir -p /var/lib/goatcounter-jg /var/lib/goatcounter-dv
+mkdir -p /etc/woodpecker /var/lib/woodpecker
 mkdir -p /etc/caddy
 
 # Set permissions
 chown -R gitea:gitea /var/lib/gitea /etc/gitea
 chown -R goatcounter:goatcounter /var/lib/goatcounter-jg /var/lib/goatcounter-dv
+chown -R woodpecker:woodpecker /var/lib/woodpecker /etc/woodpecker
 
 echo "✓ Directories created and permissions set"
 echo ""
@@ -119,13 +136,14 @@ systemctl enable postgresql
 # Wait for PostgreSQL to be ready
 sleep 3
 
-# Create database and user for Gitea
-echo "Creating Gitea database..."
+# Create databases and users
+echo "Creating databases..."
 
 GITEA_DB_PASSWORD=$(generate_password)
+WOODPECKER_DB_PASSWORD=$(generate_password)
 
 sudo -u postgres psql -v ON_ERROR_STOP=0 <<-EOSQL
-    -- Create database and user
+    -- Gitea database
     DROP DATABASE IF EXISTS gitea;
     DROP USER IF EXISTS gitea;
     CREATE DATABASE gitea;
@@ -133,9 +151,19 @@ sudo -u postgres psql -v ON_ERROR_STOP=0 <<-EOSQL
     GRANT ALL PRIVILEGES ON DATABASE gitea TO gitea;
     \c gitea
     GRANT ALL ON SCHEMA public TO gitea;
+
+    -- Woodpecker database
+    \c postgres
+    DROP DATABASE IF EXISTS woodpecker;
+    DROP USER IF EXISTS woodpecker;
+    CREATE DATABASE woodpecker;
+    CREATE USER woodpecker WITH PASSWORD '${WOODPECKER_DB_PASSWORD}';
+    GRANT ALL PRIVILEGES ON DATABASE woodpecker TO woodpecker;
+    \c woodpecker
+    GRANT ALL ON SCHEMA public TO woodpecker;
 EOSQL
 
-echo "✓ PostgreSQL database created"
+echo "✓ PostgreSQL databases created"
 echo ""
 echo "Step 6: Generating configuration..."
 echo ""
@@ -144,19 +172,38 @@ echo ""
 GITEA_SECRET_KEY=$(gitea generate secret SECRET_KEY 2>/dev/null || openssl rand -base64 64 | tr -d "=+/" | cut -c1-64)
 GITEA_INTERNAL_TOKEN=$(gitea generate secret INTERNAL_TOKEN 2>/dev/null || openssl rand -base64 64 | tr -d "=+/" | cut -c1-172)
 
+# Generate Woodpecker secrets
+WOODPECKER_AGENT_SECRET=$(generate_password)
+
 # Create .env file
 cat > .env <<EOF
-# PostgreSQL password for gitea user
+# PostgreSQL passwords
 GITEA_DB_PASSWORD=${GITEA_DB_PASSWORD}
+WOODPECKER_DB_PASSWORD=${WOODPECKER_DB_PASSWORD}
 
 # Gitea security keys
 GITEA_SECRET_KEY=${GITEA_SECRET_KEY}
 GITEA_INTERNAL_TOKEN=${GITEA_INTERNAL_TOKEN}
+
+# Woodpecker CI
+WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
+GITEA_OAUTH_CLIENT_ID=
+GITEA_OAUTH_CLIENT_SECRET=
 EOF
 
 chmod 600 .env
 
 echo "✓ Created .env with secure credentials"
+echo ""
+echo "⚠️  IMPORTANT: You must create a Gitea OAuth application:"
+echo "   1. Go to https://code.jakegoldsborough.com/user/settings/applications"
+echo "   2. Create new OAuth2 Application:"
+echo "      Name: Woodpecker CI"
+echo "      Redirect URI: https://ci.jakegoldsborough.com/authorize"
+echo "   3. Copy Client ID and Client Secret to .env file:"
+echo "      GITEA_OAUTH_CLIENT_ID=<client-id>"
+echo "      GITEA_OAUTH_CLIENT_SECRET=<client-secret>"
+echo ""
 echo ""
 echo "Step 7: Copying configuration files..."
 echo ""
@@ -169,6 +216,19 @@ sed -e "s|__GITEA_DB_PASSWORD__|${GITEA_DB_PASSWORD}|g" \
 
 chown gitea:gitea /etc/gitea/app.ini
 chmod 640 /etc/gitea/app.ini
+
+# Copy Woodpecker config and substitute passwords
+sed -e "s|__WOODPECKER_DB_PASSWORD__|${WOODPECKER_DB_PASSWORD}|g" \
+    -e "s|__WOODPECKER_AGENT_SECRET__|${WOODPECKER_AGENT_SECRET}|g" \
+    -e "s|__GITEA_OAUTH_CLIENT_ID__|${GITEA_OAUTH_CLIENT_ID:-}|g" \
+    -e "s|__GITEA_OAUTH_CLIENT_SECRET__|${GITEA_OAUTH_CLIENT_SECRET:-}|g" \
+    config/woodpecker/server.env > /etc/woodpecker/server.env
+
+sed -e "s|__WOODPECKER_AGENT_SECRET__|${WOODPECKER_AGENT_SECRET}|g" \
+    config/woodpecker/agent.env > /etc/woodpecker/agent.env
+
+chown woodpecker:woodpecker /etc/woodpecker/server.env /etc/woodpecker/agent.env
+chmod 640 /etc/woodpecker/server.env /etc/woodpecker/agent.env
 
 # Copy Caddyfile
 cp config/Caddyfile /etc/caddy/Caddyfile
@@ -214,12 +274,21 @@ echo "   - Back it up securely"
 echo ""
 echo "Next steps:"
 echo "  1. Review configuration: cat .env"
-echo "  2. Enable and start services: ./bin/deploy"
-echo "  3. Check service status: systemctl status gitea caddy goatcounter-jg goatcounter-dv"
-echo "  4. Check logs: journalctl -u gitea -f"
+echo "  2. Enable and start base services: ./bin/deploy"
+echo "  3. Set up Woodpecker CI OAuth (required before starting Woodpecker):"
+echo "     a. Access Gitea at https://code.jakegoldsborough.com"
+echo "     b. Go to Settings > Applications > OAuth2 Applications"
+echo "     c. Create new application:"
+echo "        - Name: Woodpecker CI"
+echo "        - Redirect URI: https://ci.jakegoldsborough.com/authorize"
+echo "     d. Copy Client ID and Secret to .env file"
+echo "     e. Run: sudo ./bin/deploy (to start Woodpecker with OAuth configured)"
+echo "  4. Check service status: systemctl status gitea caddy goatcounter-jg goatcounter-dv"
+echo "  5. Check logs: journalctl -u gitea -f"
 echo ""
 echo "Services will be available at:"
 echo "  - https://code.jakegoldsborough.com (Gitea)"
+echo "  - https://ci.jakegoldsborough.com (Woodpecker CI - after OAuth setup)"
 echo "  - https://stats.jakegoldsborough.com (GoatCounter)"
 echo "  - https://stats.date-ver.com (GoatCounter)"
 echo ""
