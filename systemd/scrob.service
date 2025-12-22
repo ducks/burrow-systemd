@@ -1,0 +1,17 @@
+[Unit]
+Description=Scrob Music Scrobble Server
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=scrob
+Group=scrob
+WorkingDirectory=/var/lib/scrob
+EnvironmentFile=/etc/scrob/scrob.env
+ExecStart=/usr/local/bin/scrob
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
