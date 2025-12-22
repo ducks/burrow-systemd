@@ -25,6 +25,26 @@ fi
 # Load environment variables
 source .env
 
+# Function to generate a secure random password
+generate_password() {
+    openssl rand -base64 32 | tr -d "=+/" | cut -c1-32
+}
+
+# Generate missing Woodpecker credentials
+if [ -z "${WOODPECKER_DB_PASSWORD:-}" ]; then
+    echo "⚠️  WOODPECKER_DB_PASSWORD not found in .env, generating..."
+    WOODPECKER_DB_PASSWORD=$(generate_password)
+    echo "WOODPECKER_DB_PASSWORD=${WOODPECKER_DB_PASSWORD}" >> .env
+    echo "✓ Added WOODPECKER_DB_PASSWORD to .env"
+fi
+
+if [ -z "${WOODPECKER_AGENT_SECRET:-}" ]; then
+    echo "⚠️  WOODPECKER_AGENT_SECRET not found in .env, generating..."
+    WOODPECKER_AGENT_SECRET=$(generate_password)
+    echo "WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}" >> .env
+    echo "✓ Added WOODPECKER_AGENT_SECRET to .env"
+fi
+
 echo "Step 1: Updating configuration files..."
 echo ""
 
@@ -43,6 +63,11 @@ chmod 640 /etc/gitea/app.ini
 echo "✓ Updated Gitea configuration"
 
 # Update Woodpecker config (substitute passwords from .env)
+# Create directories and user if they don't exist
+id -u woodpecker &>/dev/null || useradd -r -s /bin/bash -d /var/lib/woodpecker -m woodpecker
+mkdir -p /etc/woodpecker /var/lib/woodpecker
+chown -R woodpecker:woodpecker /var/lib/woodpecker /etc/woodpecker
+
 sed -e "s|__WOODPECKER_DB_PASSWORD__|${WOODPECKER_DB_PASSWORD}|g" \
     -e "s|__WOODPECKER_AGENT_SECRET__|${WOODPECKER_AGENT_SECRET}|g" \
     -e "s|__GITEA_OAUTH_CLIENT_ID__|${GITEA_OAUTH_CLIENT_ID:-}|g" \
@@ -69,6 +94,19 @@ echo ""
 systemctl enable postgresql
 systemctl start postgresql || systemctl restart postgresql
 echo "✓ PostgreSQL running"
+
+# Create Woodpecker database if it doesn't exist
+if ! sudo -u postgres psql -lqt | cut -d \| -f 1 | grep -qw woodpecker; then
+    echo "Creating Woodpecker database..."
+    sudo -u postgres psql -v ON_ERROR_STOP=0 <<-EOSQL
+        CREATE DATABASE woodpecker;
+        CREATE USER woodpecker WITH PASSWORD '${WOODPECKER_DB_PASSWORD}';
+        GRANT ALL PRIVILEGES ON DATABASE woodpecker TO woodpecker;
+        \c woodpecker
+        GRANT ALL ON SCHEMA public TO woodpecker;
+EOSQL
+    echo "✓ Woodpecker database created"
+fi
 
 # Enable and start base services
 for service in gitea goatcounter-jg goatcounter-dv caddy; do
