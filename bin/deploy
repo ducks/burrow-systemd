@@ -45,6 +45,13 @@ if [ -z "${WOODPECKER_AGENT_SECRET:-}" ]; then
     echo "✓ Added WOODPECKER_AGENT_SECRET to .env"
 fi
 
+if [ -z "${SCROB_DB_PASSWORD:-}" ]; then
+    echo "⚠️  SCROB_DB_PASSWORD not found in .env, generating..."
+    SCROB_DB_PASSWORD=$(generate_password)
+    echo "SCROB_DB_PASSWORD=${SCROB_DB_PASSWORD}" >> .env
+    echo "✓ Added SCROB_DB_PASSWORD to .env"
+fi
+
 # Download Woodpecker binaries if they don't exist
 if [ ! -f /usr/local/bin/woodpecker-server ]; then
     echo "Downloading Woodpecker binaries..."
@@ -58,6 +65,15 @@ if [ ! -f /usr/local/bin/woodpecker-server ]; then
     mv /tmp/woodpecker-agent /usr/local/bin/woodpecker-agent
     rm /tmp/woodpecker-*.tar.gz
     echo "✓ Woodpecker binaries installed"
+fi
+
+# Download Scrob binary if it doesn't exist
+if [ ! -f /usr/local/bin/scrob ]; then
+    echo "Downloading Scrob binary..."
+    SCROB_VERSION="latest"
+    wget -O /usr/local/bin/scrob "https://github.com/ducks/scrob/releases/latest/download/scrob-linux-x86_64"
+    chmod +x /usr/local/bin/scrob
+    echo "✓ Scrob binary installed"
 fi
 
 echo "Step 1: Updating configuration files..."
@@ -96,6 +112,19 @@ chown woodpecker:woodpecker /etc/woodpecker/server.env /etc/woodpecker/agent.env
 chmod 640 /etc/woodpecker/server.env /etc/woodpecker/agent.env
 echo "✓ Updated Woodpecker configuration"
 
+# Update Scrob config
+# Create directories and user if they don't exist
+id -u scrob &>/dev/null || useradd -r -s /bin/bash -d /var/lib/scrob -m scrob
+mkdir -p /etc/scrob /var/lib/scrob
+chown -R scrob:scrob /var/lib/scrob /etc/scrob
+
+sed -e "s|__SCROB_DB_PASSWORD__|${SCROB_DB_PASSWORD}|g" \
+    config/scrob/scrob.env > /etc/scrob/scrob.env
+
+chown scrob:scrob /etc/scrob/scrob.env
+chmod 640 /etc/scrob/scrob.env
+echo "✓ Updated Scrob configuration"
+
 # Update systemd service files
 cp systemd/*.service /etc/systemd/system/
 systemctl daemon-reload
@@ -123,8 +152,21 @@ EOSQL
     echo "✓ Woodpecker database created"
 fi
 
+# Create Scrob database if it doesn't exist
+if ! sudo -u postgres psql -lqt | cut -d \| -f 1 | grep -qw scrob; then
+    echo "Creating Scrob database..."
+    sudo -u postgres psql -v ON_ERROR_STOP=0 <<-EOSQL
+        CREATE DATABASE scrob;
+        CREATE USER scrob WITH PASSWORD '${SCROB_DB_PASSWORD}';
+        GRANT ALL PRIVILEGES ON DATABASE scrob TO scrob;
+        \c scrob
+        GRANT ALL ON SCHEMA public TO scrob;
+EOSQL
+    echo "✓ Scrob database created"
+fi
+
 # Enable and start base services
-for service in gitea goatcounter-jg goatcounter-dv caddy; do
+for service in gitea goatcounter-jg goatcounter-dv scrob caddy; do
     systemctl enable $service
     systemctl restart $service
 
@@ -166,13 +208,14 @@ echo "=== Deployment Complete ==="
 echo ""
 echo "Services status:"
 if [ -n "${GITEA_OAUTH_CLIENT_ID:-}" ] && [ -n "${GITEA_OAUTH_CLIENT_SECRET:-}" ]; then
-    systemctl status gitea caddy goatcounter-jg goatcounter-dv woodpecker-server woodpecker-agent --no-pager | grep -E "●|Active:"
+    systemctl status gitea caddy goatcounter-jg goatcounter-dv scrob woodpecker-server woodpecker-agent --no-pager | grep -E "●|Active:"
 else
-    systemctl status gitea caddy goatcounter-jg goatcounter-dv --no-pager | grep -E "●|Active:"
+    systemctl status gitea caddy goatcounter-jg goatcounter-dv scrob --no-pager | grep -E "●|Active:"
 fi
 echo ""
 echo "Services available at:"
 echo "  - https://code.jakegoldsborough.com (Gitea)"
+echo "  - https://scrob.jakegoldsborough.com (Scrob)"
 if [ -n "${GITEA_OAUTH_CLIENT_ID:-}" ] && [ -n "${GITEA_OAUTH_CLIENT_SECRET:-}" ]; then
     echo "  - https://ci.jakegoldsborough.com (Woodpecker CI)"
 fi
@@ -184,6 +227,7 @@ echo "  journalctl -u gitea -f"
 echo "  journalctl -u caddy -f"
 echo "  journalctl -u goatcounter-jg -f"
 echo "  journalctl -u goatcounter-dv -f"
+echo "  journalctl -u scrob -f"
 if [ -n "${GITEA_OAUTH_CLIENT_ID:-}" ] && [ -n "${GITEA_OAUTH_CLIENT_SECRET:-}" ]; then
     echo "  journalctl -u woodpecker-server -f"
     echo "  journalctl -u woodpecker-agent -f"
