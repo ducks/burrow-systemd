@@ -45,6 +45,18 @@ if [ -z "${WOODPECKER_AGENT_SECRET:-}" ]; then
     echo "✓ Added WOODPECKER_AGENT_SECRET to .env"
 fi
 
+# Download Woodpecker binaries if they don't exist
+if [ ! -f /usr/local/bin/woodpecker-server ]; then
+    echo "Downloading Woodpecker binaries..."
+    WOODPECKER_VERSION="2.7.1"
+    wget -O /tmp/woodpecker-server "https://github.com/woodpecker-ci/woodpecker/releases/download/v${WOODPECKER_VERSION}/woodpecker-server_linux_amd64"
+    wget -O /tmp/woodpecker-agent "https://github.com/woodpecker-ci/woodpecker/releases/download/v${WOODPECKER_VERSION}/woodpecker-agent_linux_amd64"
+    chmod +x /tmp/woodpecker-server /tmp/woodpecker-agent
+    mv /tmp/woodpecker-server /usr/local/bin/woodpecker-server
+    mv /tmp/woodpecker-agent /usr/local/bin/woodpecker-agent
+    echo "✓ Woodpecker binaries installed"
+fi
+
 echo "Step 1: Updating configuration files..."
 echo ""
 
