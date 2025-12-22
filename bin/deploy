@@ -48,12 +48,15 @@ fi
 # Download Woodpecker binaries if they don't exist
 if [ ! -f /usr/local/bin/woodpecker-server ]; then
     echo "Downloading Woodpecker binaries..."
-    WOODPECKER_VERSION="2.7.1"
-    wget -O /tmp/woodpecker-server "https://github.com/woodpecker-ci/woodpecker/releases/download/v${WOODPECKER_VERSION}/woodpecker-server_linux_amd64"
-    wget -O /tmp/woodpecker-agent "https://github.com/woodpecker-ci/woodpecker/releases/download/v${WOODPECKER_VERSION}/woodpecker-agent_linux_amd64"
+    WOODPECKER_VERSION="3.12.0"
+    wget -O /tmp/woodpecker-server.tar.gz "https://github.com/woodpecker-ci/woodpecker/releases/download/v${WOODPECKER_VERSION}/woodpecker-server_linux_amd64.tar.gz"
+    wget -O /tmp/woodpecker-agent.tar.gz "https://github.com/woodpecker-ci/woodpecker/releases/download/v${WOODPECKER_VERSION}/woodpecker-agent_linux_amd64.tar.gz"
+    tar -xzf /tmp/woodpecker-server.tar.gz -C /tmp
+    tar -xzf /tmp/woodpecker-agent.tar.gz -C /tmp
     chmod +x /tmp/woodpecker-server /tmp/woodpecker-agent
     mv /tmp/woodpecker-server /usr/local/bin/woodpecker-server
     mv /tmp/woodpecker-agent /usr/local/bin/woodpecker-agent
+    rm /tmp/woodpecker-*.tar.gz
     echo "✓ Woodpecker binaries installed"
 fi
 
