@@ -65,7 +65,8 @@ burrow-systemd/
 │   ├── bootstrap         # Initial setup script
 │   ├── deploy            # Update and restart services
 │   ├── backup            # Backup databases
-│   └── update            # Update service binaries
+│   ├── update            # Update service binaries
+│   └── create-scrob-user # Create scrob user and get API token
 ├── data/                 # Local data (git-ignored)
 │   ├── goatcounter-jg/
 │   └── goatcounter-dv/
@@ -121,6 +122,54 @@ Your services should now be available at:
 - https://code.jakegoldsborough.com
 - https://stats.jakegoldsborough.com
 - https://stats.date-ver.com
+
+## Setting Up Scrob
+
+Scrob is a music scrobbling server with a REST API. After deployment, you'll need to create at least one user account.
+
+### 1. Create Your First User
+
+Use the `create-scrob-user` script to create a user and get an API token:
+
+```bash
+cd ~/dev/burrow-systemd
+sudo ./bin/create-scrob-user <username> <password>
+```
+
+Example:
+```bash
+sudo ./bin/create-scrob-user jake mypassword
+```
+
+The script will:
+1. Create the user in the scrob database
+2. Log in via the API
+3. Display your API token
+
+### 2. Save Your API Token
+
+Copy the displayed token and save it securely. You'll need it to use scrob clients like shelltrax:
+
+```bash
+export SCROB_TOKEN="your-token-here"
+export SCROB_SERVER_URL="https://scrob.jakegoldsborough.com"
+```
+
+### 3. Access Scrob
+
+- **API**: https://scrob.jakegoldsborough.com
+- **Web UI**: https://ui.scrob.jakegoldsborough.com
+
+Log in to the web UI with your username and password.
+
+### 4. Create Additional Users (Optional)
+
+Repeat the `create-scrob-user` command to create more users:
+
+```bash
+sudo ./bin/create-scrob-user alice alicespassword
+sudo ./bin/create-scrob-user bob bobspassword
+```
 
 ## Setting Up Woodpecker CI
 
@@ -209,6 +258,12 @@ Create a backup of all databases and data:
 sudo ./bin/backup
 ```
 
+This backs up:
+- PostgreSQL databases (Gitea, Woodpecker, Scrob)
+- GoatCounter SQLite databases
+- Gitea repositories and data
+- Configuration files
+
 Backups are stored in `~/burrow-backups/` with timestamps.
 
 ## Service Management
@@ -217,11 +272,12 @@ Backups are stored in `~/burrow-backups/` with timestamps.
 
 ```bash
 # All services
-journalctl -u gitea -u caddy -u goatcounter-jg -u goatcounter-dv -u woodpecker-server -u woodpecker-agent -f
+journalctl -u gitea -u caddy -u scrob -u goatcounter-jg -u goatcounter-dv -u woodpecker-server -u woodpecker-agent -f
 
 # Individual service
 journalctl -u gitea -f
 journalctl -u caddy -f
+journalctl -u scrob -f
 journalctl -u woodpecker-server -f
 journalctl -u woodpecker-agent -f
 ```
@@ -231,19 +287,20 @@ journalctl -u woodpecker-agent -f
 ```bash
 sudo systemctl restart gitea
 sudo systemctl restart caddy
+sudo systemctl restart scrob
 sudo systemctl restart woodpecker-server woodpecker-agent
 ```
 
 ### Stop all services
 
 ```bash
-sudo systemctl stop gitea caddy goatcounter-jg goatcounter-dv woodpecker-server woodpecker-agent
+sudo systemctl stop gitea caddy scrob goatcounter-jg goatcounter-dv woodpecker-server woodpecker-agent
 ```
 
 ### Start all services
 
 ```bash
-sudo systemctl start postgresql gitea goatcounter-jg goatcounter-dv woodpecker-server woodpecker-agent caddy
+sudo systemctl start postgresql gitea scrob goatcounter-jg goatcounter-dv woodpecker-server woodpecker-agent caddy
 ```
 
 ## File Locations
@@ -252,6 +309,9 @@ sudo systemctl start postgresql gitea goatcounter-jg goatcounter-dv woodpecker-s
 - Gitea config: `/etc/gitea/app.ini`
 - Woodpecker data: `/var/lib/woodpecker/`
 - Woodpecker config: `/etc/woodpecker/server.env` and `/etc/woodpecker/agent.env`
+- Scrob data: `/var/lib/scrob/`
+- Scrob config: `/etc/scrob/scrob.env`
+- Scrob UI: `/var/www/scrob-ui/`
 - GoatCounter data: `/var/lib/goatcounter-jg/` and `/var/lib/goatcounter-dv/`
 - Caddy config: `/etc/caddy/Caddyfile`
 - Systemd services: `/etc/systemd/system/*.service`
@@ -342,6 +402,28 @@ sudo chmod +x /usr/local/bin/goatcounter
 
 # Restart services
 sudo systemctl restart goatcounter-jg goatcounter-dv
+```
+
+### Update Scrob
+
+```bash
+# Download new version
+wget -O /usr/local/bin/scrob https://github.com/ducks/scrob/releases/download/v<VERSION>/scrob-linux-x86_64
+chmod +x /usr/local/bin/scrob
+
+# Restart service
+sudo systemctl restart scrob
+```
+
+### Update Scrob UI
+
+```bash
+# Download new version
+wget -O /tmp/scrob-ui-dist.tar.gz https://github.com/ducks/scrob-ui/releases/download/v<VERSION>/scrob-ui-dist.tar.gz
+tar -xzf /tmp/scrob-ui-dist.tar.gz -C /var/www/scrob-ui
+rm /tmp/scrob-ui-dist.tar.gz
+
+# No restart needed - served as static files by Caddy
 ```
 
 ### Update Woodpecker
