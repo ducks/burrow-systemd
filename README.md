@@ -7,19 +7,22 @@ Declarative infrastructure for VPS using systemd services instead of Docker.
 - **Caddy** - Reverse proxy with automatic HTTPS (Let's Encrypt)
 - **Gitea** - Git hosting at code.jakegoldsborough.com
 - **Woodpecker CI** - Continuous integration at ci.jakegoldsborough.com
+- **Scrob** - Music scrobbling server at scrob.jakegoldsborough.com
+- **Scrob UI** - Web interface for Scrob at ui.scrob.jakegoldsborough.com
 - **GoatCounter** (2 instances) - Analytics at:
   - stats.jakegoldsborough.com
   - stats.date-ver.com
-- **PostgreSQL** - Database for Gitea and Woodpecker
+- **PostgreSQL** - Database for Gitea, Woodpecker, and Scrob
 
 ## Architecture
 
 Unlike the Docker version, this uses native systemd services:
 
 - All services run directly on the host (no containers)
-- PostgreSQL for Gitea and Woodpecker databases
+- PostgreSQL for Gitea, Woodpecker, and Scrob databases
 - SQLite for GoatCounter instances (separate databases)
 - Woodpecker uses local backend (no Docker required for builds)
+- Scrob UI served as static files by Caddy
 - Caddy handles reverse proxy and automatic SSL
 - Configuration managed via git
 
@@ -30,6 +33,8 @@ Unlike the Docker version, this uses native systemd services:
 - Domains pointing to your VPS:
   - code.jakegoldsborough.com
   - ci.jakegoldsborough.com
+  - scrob.jakegoldsborough.com
+  - ui.scrob.jakegoldsborough.com
   - stats.jakegoldsborough.com
   - stats.date-ver.com
 
@@ -42,6 +47,7 @@ burrow-systemd/
 │   ├── gitea.service
 │   ├── woodpecker-server.service
 │   ├── woodpecker-agent.service
+│   ├── scrob.service
 │   ├── goatcounter-jg.service
 │   └── goatcounter-dv.service
 ├── config/
@@ -51,6 +57,8 @@ burrow-systemd/
 │   ├── woodpecker/
 │   │   ├── server.env    # Woodpecker server config
 │   │   └── agent.env     # Woodpecker agent config
+│   ├── scrob/
+│   │   └── scrob.env     # Scrob server config
 │   └── postgres/
 │       └── init-databases.sql  # PostgreSQL initialization
 ├── bin/

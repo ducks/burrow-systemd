@@ -26,3 +26,10 @@ scrob.jakegoldsborough.com {
 	reverse_proxy localhost:3002
 	encode gzip
 }
+
+ui.scrob.jakegoldsborough.com {
+	root * /var/www/scrob-ui
+	file_server
+	try_files {path} /index.html
+	encode gzip
+}
