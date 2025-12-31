@@ -76,6 +76,14 @@ if [ ! -f /usr/local/bin/scrob ]; then
     echo "✓ Scrob binary installed"
 fi
 
+# Download and deploy Scrob UI
+echo "Downloading Scrob UI..."
+mkdir -p /var/www/scrob-ui
+wget -O /tmp/scrob-ui-dist.tar.gz "https://github.com/ducks/scrob-ui/releases/latest/download/scrob-ui-dist.tar.gz"
+tar -xzf /tmp/scrob-ui-dist.tar.gz -C /var/www/scrob-ui
+rm /tmp/scrob-ui-dist.tar.gz
+echo "✓ Scrob UI deployed to /var/www/scrob-ui"
+
 echo "Step 1: Updating configuration files..."
 echo ""
 
@@ -215,7 +223,8 @@ fi
 echo ""
 echo "Services available at:"
 echo "  - https://code.jakegoldsborough.com (Gitea)"
-echo "  - https://scrob.jakegoldsborough.com (Scrob)"
+echo "  - https://scrob.jakegoldsborough.com (Scrob API)"
+echo "  - https://ui.scrob.jakegoldsborough.com (Scrob UI)"
 if [ -n "${GITEA_OAUTH_CLIENT_ID:-}" ] && [ -n "${GITEA_OAUTH_CLIENT_SECRET:-}" ]; then
     echo "  - https://ci.jakegoldsborough.com (Woodpecker CI)"
 fi
