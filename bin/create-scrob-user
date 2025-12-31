@@ -30,19 +30,16 @@ fi
 
 source "$REPO_DIR/.env"
 
-# Hash the password using Python with bcrypt
-if ! command -v python3 &> /dev/null; then
-    echo "❌ python3 is required but not installed"
+# Hash the password using htpasswd (from apache2-utils)
+if ! command -v htpasswd &> /dev/null; then
+    echo "❌ htpasswd is required but not installed"
+    echo "Install with: apt install apache2-utils  (Debian/Ubuntu)"
+    echo "           or: pacman -S apache  (Arch)"
     exit 1
 fi
 
-if ! python3 -c "import bcrypt" 2>/dev/null; then
-    echo "❌ Python bcrypt module is required but not installed"
-    echo "Install with: pip3 install bcrypt"
-    exit 1
-fi
-
-HASH=$(python3 -c "import bcrypt; print(bcrypt.hashpw(b'$PASSWORD', bcrypt.gensalt()).decode('utf-8'))")
+# htpasswd generates bcrypt hash with -B flag
+HASH=$(htpasswd -nbB "" "$PASSWORD" | cut -d: -f2)
 TIMESTAMP=$(date +%s)
 
 # Insert user into database
