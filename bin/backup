@@ -20,10 +20,20 @@ mkdir -p "$BACKUP_DIR"
 echo "Backup directory: $BACKUP_DIR"
 echo ""
 
-# Backup PostgreSQL (Gitea database)
-echo "Backing up PostgreSQL (Gitea)..."
+# Backup PostgreSQL databases
+echo "Backing up PostgreSQL databases..."
 sudo -u postgres pg_dump gitea > "$BACKUP_DIR/gitea-postgres.sql"
-echo "✓ PostgreSQL backup: $BACKUP_DIR/gitea-postgres.sql"
+echo "✓ Gitea database: $BACKUP_DIR/gitea-postgres.sql"
+
+if sudo -u postgres psql -lqt | cut -d \| -f 1 | grep -qw woodpecker; then
+    sudo -u postgres pg_dump woodpecker > "$BACKUP_DIR/woodpecker-postgres.sql"
+    echo "✓ Woodpecker database: $BACKUP_DIR/woodpecker-postgres.sql"
+fi
+
+if sudo -u postgres psql -lqt | cut -d \| -f 1 | grep -qw scrob; then
+    sudo -u postgres pg_dump scrob > "$BACKUP_DIR/scrob-postgres.sql"
+    echo "✓ Scrob database: $BACKUP_DIR/scrob-postgres.sql"
+fi
 
 # Backup GoatCounter databases
 echo ""
@@ -69,9 +79,12 @@ echo "Size: $(du -h "$(dirname "$BACKUP_DIR")/${BACKUP_NAME}.tar.gz" | cut -f1)"
 echo ""
 echo "To restore:"
 echo "  1. Extract: tar -xzf ${BACKUP_NAME}.tar.gz"
-echo "  2. Stop services: systemctl stop gitea goatcounter-jg goatcounter-dv"
-echo "  3. Restore PostgreSQL: sudo -u postgres psql gitea < gitea-postgres.sql"
+echo "  2. Stop services: systemctl stop gitea scrob woodpecker-server woodpecker-agent goatcounter-jg goatcounter-dv"
+echo "  3. Restore PostgreSQL databases:"
+echo "     sudo -u postgres psql gitea < gitea-postgres.sql"
+echo "     sudo -u postgres psql scrob < scrob-postgres.sql"
+echo "     sudo -u postgres psql woodpecker < woodpecker-postgres.sql"
 echo "  4. Restore SQLite databases to /var/lib/goatcounter-*/"
 echo "  5. Restore Gitea data: tar -xzf gitea-data.tar.gz -C /var/lib/gitea"
-echo "  6. Start services: systemctl start gitea goatcounter-jg goatcounter-dv"
+echo "  6. Start services: systemctl start gitea scrob woodpecker-server woodpecker-agent goatcounter-jg goatcounter-dv"
 echo ""
