@@ -1,0 +1,84 @@
+#!/bin/bash
+set -e
+
+# Create scrob user and get API token
+# Usage: sudo ./bin/create-scrob-user <username> <password>
+
+if [ "$EUID" -ne 0 ]; then
+    echo "❌ This script must be run as root (use sudo)"
+    exit 1
+fi
+
+if [ -z "$1" ] || [ -z "$2" ]; then
+    echo "Usage: sudo $0 <username> <password>"
+    echo "Example: sudo $0 alice mypassword"
+    exit 1
+fi
+
+USERNAME="$1"
+PASSWORD="$2"
+IS_ADMIN="true"
+
+echo "Creating scrob user '$USERNAME'..."
+
+# Load environment to get database password
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ ! -f "$REPO_DIR/.env" ]; then
+    echo "❌ .env file not found. Run ./bin/bootstrap first."
+    exit 1
+fi
+
+source "$REPO_DIR/.env"
+
+# Hash the password using Python with bcrypt
+if ! command -v python3 &> /dev/null; then
+    echo "❌ python3 is required but not installed"
+    exit 1
+fi
+
+if ! python3 -c "import bcrypt" 2>/dev/null; then
+    echo "❌ Python bcrypt module is required but not installed"
+    echo "Install with: pip3 install bcrypt"
+    exit 1
+fi
+
+HASH=$(python3 -c "import bcrypt; print(bcrypt.hashpw(b'$PASSWORD', bcrypt.gensalt()).decode('utf-8'))")
+TIMESTAMP=$(date +%s)
+
+# Insert user into database
+DATABASE_URL="postgres://scrob:${SCROB_DB_PASSWORD}@localhost:5432/scrob"
+
+sudo -u postgres psql scrob <<EOF
+INSERT INTO users (username, password_hash, is_admin, created_at)
+VALUES ('$USERNAME', '$HASH', $IS_ADMIN, $TIMESTAMP)
+ON CONFLICT (username) DO NOTHING;
+EOF
+
+echo "✓ User '$USERNAME' created (admin: $IS_ADMIN)"
+echo ""
+echo "Getting API token..."
+
+# Login via the API to get a token
+RESPONSE=$(curl -s -X POST https://scrob.jakegoldsborough.com/login \
+    -H "Content-Type: application/json" \
+    -d "{\"username\": \"$USERNAME\", \"password\": \"$PASSWORD\"}")
+
+TOKEN=$(echo "$RESPONSE" | grep -o '"token":"[^"]*' | cut -d'"' -f4)
+
+if [ -z "$TOKEN" ]; then
+    echo "❌ Failed to get token. Response: $RESPONSE"
+    exit 1
+fi
+
+echo ""
+echo "✓ Login successful!"
+echo ""
+echo "========================================="
+echo "API Token for $USERNAME:"
+echo "$TOKEN"
+echo "========================================="
+echo ""
+echo "Use this token in shelltrax or other clients:"
+echo "  export SCROB_TOKEN=\"$TOKEN\""
+echo "  export SCROB_URL=\"https://scrob.jakegoldsborough.com\""
+echo ""
