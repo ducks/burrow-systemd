@@ -39,7 +39,9 @@ if ! command -v htpasswd &> /dev/null; then
 fi
 
 # htpasswd generates bcrypt hash with -B flag
-HASH=$(htpasswd -nbB "" "$PASSWORD" | cut -d: -f2)
+# Use a dummy username since htpasswd requires one, then extract just the hash
+# Use printf to avoid shell expansion issues with special characters
+HASH=$(printf '%s\n' "$PASSWORD" | htpasswd -niB "dummy" | cut -d: -f2)
 TIMESTAMP=$(date +%s)
 
 # Insert user into database
