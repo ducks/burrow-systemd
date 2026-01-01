@@ -77,6 +77,7 @@ fi
 
 if [ "$SCROB_CURRENT" != "${SCROB_LATEST#v}" ]; then
     echo "Updating Scrob from ${SCROB_CURRENT:-none} to ${SCROB_LATEST}..."
+    systemctl stop scrob
     wget -O /usr/local/bin/scrob "https://github.com/ducks/scrob/releases/latest/download/scrob-linux-x86_64"
     chmod +x /usr/local/bin/scrob
     echo "✓ Scrob binary updated to ${SCROB_LATEST}"
