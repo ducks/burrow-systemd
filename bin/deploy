@@ -67,13 +67,21 @@ if [ ! -f /usr/local/bin/woodpecker-server ]; then
     echo "✓ Woodpecker binaries installed"
 fi
 
-# Download Scrob binary if it doesn't exist
-if [ ! -f /usr/local/bin/scrob ]; then
-    echo "Downloading Scrob binary..."
-    SCROB_VERSION="latest"
+# Check for and download latest Scrob binary if needed
+echo "Checking for Scrob updates..."
+SCROB_LATEST=$(curl -s https://api.github.com/repos/ducks/scrob/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
+SCROB_CURRENT=""
+if [ -f /usr/local/bin/scrob ]; then
+    SCROB_CURRENT=$(/usr/local/bin/scrob --version 2>/dev/null | grep -oP 'scrob \K[0-9.]+' || echo "unknown")
+fi
+
+if [ "$SCROB_CURRENT" != "${SCROB_LATEST#v}" ]; then
+    echo "Updating Scrob from ${SCROB_CURRENT:-none} to ${SCROB_LATEST}..."
     wget -O /usr/local/bin/scrob "https://github.com/ducks/scrob/releases/latest/download/scrob-linux-x86_64"
     chmod +x /usr/local/bin/scrob
-    echo "✓ Scrob binary installed"
+    echo "✓ Scrob binary updated to ${SCROB_LATEST}"
+else
+    echo "✓ Scrob is already at latest version (${SCROB_LATEST})"
 fi
 
 # Download and deploy Scrob UI
