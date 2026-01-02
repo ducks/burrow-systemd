@@ -1,0 +1,15 @@
+[Unit]
+Description=GoatCounter Analytics - stats.gnarlyvoid.com
+After=network.target
+
+[Service]
+Type=simple
+User=goatcounter
+Group=goatcounter
+WorkingDirectory=/var/lib/goatcounter-gv
+ExecStart=/usr/local/bin/goatcounter serve -listen localhost:8083 -tls none -db sqlite+/var/lib/goatcounter-gv/goatcounter.db
+Restart=always
+Environment=HOME=/var/lib/goatcounter-gv
+
+[Install]
+WantedBy=multi-user.target
