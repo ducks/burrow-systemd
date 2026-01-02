@@ -107,13 +107,13 @@ echo ""
 
 # Create directories
 mkdir -p /etc/gitea /var/lib/gitea/{repositories,data,log}
-mkdir -p /var/lib/goatcounter-jg /var/lib/goatcounter-dv
+mkdir -p /var/lib/goatcounter-jg /var/lib/goatcounter-dv /var/lib/goatcounter-gv
 mkdir -p /etc/woodpecker /var/lib/woodpecker
 mkdir -p /etc/caddy
 
 # Set permissions
 chown -R gitea:gitea /var/lib/gitea /etc/gitea
-chown -R goatcounter:goatcounter /var/lib/goatcounter-jg /var/lib/goatcounter-dv
+chown -R goatcounter:goatcounter /var/lib/goatcounter-jg /var/lib/goatcounter-dv /var/lib/goatcounter-gv
 chown -R woodpecker:woodpecker /var/lib/woodpecker /etc/woodpecker
 
 echo "✓ Directories created and permissions set"
@@ -283,7 +283,7 @@ echo "        - Name: Woodpecker CI"
 echo "        - Redirect URI: https://ci.jakegoldsborough.com/authorize"
 echo "     d. Copy Client ID and Secret to .env file"
 echo "     e. Run: sudo ./bin/deploy (to start Woodpecker with OAuth configured)"
-echo "  4. Check service status: systemctl status gitea caddy goatcounter-jg goatcounter-dv"
+echo "  4. Check service status: systemctl status gitea caddy goatcounter-jg goatcounter-dv goatcounter-gv"
 echo "  5. Check logs: journalctl -u gitea -f"
 echo ""
 echo "Services will be available at:"
@@ -291,4 +291,5 @@ echo "  - https://code.jakegoldsborough.com (Gitea)"
 echo "  - https://ci.jakegoldsborough.com (Woodpecker CI - after OAuth setup)"
 echo "  - https://stats.jakegoldsborough.com (GoatCounter)"
 echo "  - https://stats.date-ver.com (GoatCounter)"
+echo "  - https://stats.gnarlyvoid.com (GoatCounter)"
 echo ""

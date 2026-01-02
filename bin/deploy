@@ -183,7 +183,7 @@ EOSQL
 fi
 
 # Enable and start base services
-for service in gitea goatcounter-jg goatcounter-dv scrob caddy; do
+for service in gitea goatcounter-jg goatcounter-dv goatcounter-gv scrob caddy; do
     systemctl enable $service
     systemctl restart $service
 
@@ -225,9 +225,9 @@ echo "=== Deployment Complete ==="
 echo ""
 echo "Services status:"
 if [ -n "${GITEA_OAUTH_CLIENT_ID:-}" ] && [ -n "${GITEA_OAUTH_CLIENT_SECRET:-}" ]; then
-    systemctl status gitea caddy goatcounter-jg goatcounter-dv scrob woodpecker-server woodpecker-agent --no-pager | grep -E "●|Active:"
+    systemctl status gitea caddy goatcounter-jg goatcounter-dv goatcounter-gv scrob woodpecker-server woodpecker-agent --no-pager | grep -E "●|Active:"
 else
-    systemctl status gitea caddy goatcounter-jg goatcounter-dv scrob --no-pager | grep -E "●|Active:"
+    systemctl status gitea caddy goatcounter-jg goatcounter-dv goatcounter-gv scrob --no-pager | grep -E "●|Active:"
 fi
 echo ""
 echo "Services available at:"
@@ -239,12 +239,14 @@ if [ -n "${GITEA_OAUTH_CLIENT_ID:-}" ] && [ -n "${GITEA_OAUTH_CLIENT_SECRET:-}" 
 fi
 echo "  - https://stats.jakegoldsborough.com (GoatCounter)"
 echo "  - https://stats.date-ver.com (GoatCounter)"
+echo "  - https://stats.gnarlyvoid.com (GoatCounter)"
 echo ""
 echo "To view logs:"
 echo "  journalctl -u gitea -f"
 echo "  journalctl -u caddy -f"
 echo "  journalctl -u goatcounter-jg -f"
 echo "  journalctl -u goatcounter-dv -f"
+echo "  journalctl -u goatcounter-gv -f"
 echo "  journalctl -u scrob -f"
 if [ -n "${GITEA_OAUTH_CLIENT_ID:-}" ] && [ -n "${GITEA_OAUTH_CLIENT_SECRET:-}" ]; then
     echo "  journalctl -u woodpecker-server -f"
