@@ -182,6 +182,11 @@ EOSQL
     echo "✓ Scrob database created"
 fi
 
+# Create GoatCounter directories if they don't exist
+mkdir -p /var/lib/goatcounter-jg /var/lib/goatcounter-dv /var/lib/goatcounter-gv
+chown -R goatcounter:goatcounter /var/lib/goatcounter-jg /var/lib/goatcounter-dv /var/lib/goatcounter-gv 2>/dev/null || true
+echo "✓ GoatCounter directories ready"
+
 # Enable and start base services
 for service in gitea goatcounter-jg goatcounter-dv goatcounter-gv scrob caddy; do
     systemctl enable $service
