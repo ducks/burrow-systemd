@@ -1,11 +1,14 @@
 #!/bin/bash
 set -e
 
-# Update script - updates service binaries to latest versions
-# Usage: sudo ./bin/update [service]
-#   service: gitea, goatcounter, woodpecker, caddy, or all (default: all)
+# Update script - checks and applies updates for infrastructure services
+# Usage:
+#   sudo ./bin/update check           - Check for available updates
+#   sudo ./bin/update apply           - Apply all available updates
+#   sudo ./bin/update apply [service] - Apply update for specific service
 
-echo "=== Burrow Update ===" echo ""
+echo "=== Burrow Update ==="
+echo ""
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
@@ -13,111 +16,145 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-SERVICE="${1:-all}"
+MODE="${1:-check}"
+SERVICE="${2:-all}"
+
+# Colors for output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+check_gitea() {
+    echo -n "Gitea: "
+    CURRENT=$(/usr/local/bin/gitea --version 2>/dev/null | grep -oP '(?<=version )[0-9.]+' || echo "unknown")
+    LATEST=$(curl -s https://api.github.com/repos/go-gitea/gitea/releases/latest | grep -oP '"tag_name": "v\K[^"]+')
+
+    if [ "$CURRENT" = "$LATEST" ]; then
+        echo -e "${GREEN}${CURRENT} (up to date)${NC}"
+        return 1
+    else
+        echo -e "${YELLOW}${CURRENT} -> ${LATEST} (update available)${NC}"
+        return 0
+    fi
+}
 
 update_gitea() {
     echo "Updating Gitea..."
-
-    # Get current version
     CURRENT=$(/usr/local/bin/gitea --version 2>/dev/null | grep -oP '(?<=version )[0-9.]+' || echo "unknown")
-    echo "Current version: $CURRENT"
-
-    # Fetch latest version from GitHub API
     LATEST=$(curl -s https://api.github.com/repos/go-gitea/gitea/releases/latest | grep -oP '"tag_name": "v\K[^"]+')
-    echo "Latest version: $LATEST"
 
     if [ "$CURRENT" = "$LATEST" ]; then
-        echo "✓ Gitea is already up to date"
+        echo "✓ Gitea is already up to date (${CURRENT})"
         return
     fi
 
     echo "Downloading Gitea ${LATEST}..."
-    wget -O /tmp/gitea "https://dl.gitea.com/gitea/${LATEST}/gitea-${LATEST}-linux-amd64"
-
-    # Stop service
-    echo "Stopping Gitea..."
+    wget -q -O /tmp/gitea "https://dl.gitea.com/gitea/${LATEST}/gitea-${LATEST}-linux-amd64"
     systemctl stop gitea
-
-    # Replace binary
     chmod +x /tmp/gitea
     mv /tmp/gitea /usr/local/bin/gitea
-
-    # Start service
-    echo "Starting Gitea..."
     systemctl start gitea
-
     echo "✓ Gitea updated to ${LATEST}"
+}
+
+check_goatcounter() {
+    echo -n "GoatCounter: "
+    CURRENT=$(/usr/local/bin/goatcounter version 2>/dev/null | grep -oP 'version \K[0-9.]+' || echo "unknown")
+    LATEST=$(curl -s https://api.github.com/repos/arp242/goatcounter/releases/latest | grep -oP '"tag_name": "v\K[^"]+')
+
+    if [ "$CURRENT" = "$LATEST" ]; then
+        echo -e "${GREEN}${CURRENT} (up to date)${NC}"
+        return 1
+    else
+        echo -e "${YELLOW}${CURRENT} -> ${LATEST} (update available)${NC}"
+        return 0
+    fi
 }
 
 update_goatcounter() {
     echo "Updating GoatCounter..."
-
-    # Get current version
     CURRENT=$(/usr/local/bin/goatcounter version 2>/dev/null | grep -oP 'version \K[0-9.]+' || echo "unknown")
-    echo "Current version: $CURRENT"
-
-    # Fetch latest version from GitHub API
     LATEST=$(curl -s https://api.github.com/repos/arp242/goatcounter/releases/latest | grep -oP '"tag_name": "v\K[^"]+')
-    echo "Latest version: $LATEST"
 
     if [ "$CURRENT" = "$LATEST" ]; then
-        echo "✓ GoatCounter is already up to date"
+        echo "✓ GoatCounter is already up to date (${CURRENT})"
         return
     fi
 
     echo "Downloading GoatCounter ${LATEST}..."
-    wget -O /tmp/goatcounter.gz "https://github.com/arp242/goatcounter/releases/download/v${LATEST}/goatcounter-v${LATEST}-linux-amd64.gz"
+    wget -q -O /tmp/goatcounter.gz "https://github.com/arp242/goatcounter/releases/download/v${LATEST}/goatcounter-v${LATEST}-linux-amd64.gz"
     gunzip -f /tmp/goatcounter.gz
-
-    # Stop services
-    echo "Stopping GoatCounter services..."
-    systemctl stop goatcounter-jg goatcounter-dv
-
-    # Replace binary
+    systemctl stop goatcounter-jg goatcounter-dv goatcounter-gv
     chmod +x /tmp/goatcounter
     mv /tmp/goatcounter /usr/local/bin/goatcounter
-
-    # Start services
-    echo "Starting GoatCounter services..."
-    systemctl start goatcounter-jg goatcounter-dv
-
+    systemctl start goatcounter-jg goatcounter-dv goatcounter-gv
     echo "✓ GoatCounter updated to ${LATEST}"
+}
+
+check_woodpecker() {
+    echo -n "Woodpecker: "
+    CURRENT=$(/usr/local/bin/woodpecker-server --version 2>/dev/null | grep -oP '(?<=version )[0-9.]+' || echo "unknown")
+    LATEST=$(curl -s https://api.github.com/repos/woodpecker-ci/woodpecker/releases/latest | grep -oP '"tag_name": "v\K[^"]+')
+
+    if [ "$CURRENT" = "$LATEST" ]; then
+        echo -e "${GREEN}${CURRENT} (up to date)${NC}"
+        return 1
+    else
+        echo -e "${YELLOW}${CURRENT} -> ${LATEST} (update available)${NC}"
+        return 0
+    fi
 }
 
 update_woodpecker() {
     echo "Updating Woodpecker..."
-
-    # Get current version
     CURRENT=$(/usr/local/bin/woodpecker-server --version 2>/dev/null | grep -oP '(?<=version )[0-9.]+' || echo "unknown")
-    echo "Current version: $CURRENT"
-
-    # Fetch latest version from GitHub API
     LATEST=$(curl -s https://api.github.com/repos/woodpecker-ci/woodpecker/releases/latest | grep -oP '"tag_name": "v\K[^"]+')
-    echo "Latest version: $LATEST"
 
     if [ "$CURRENT" = "$LATEST" ]; then
-        echo "✓ Woodpecker is already up to date"
+        echo "✓ Woodpecker is already up to date (${CURRENT})"
         return
     fi
 
     echo "Downloading Woodpecker ${LATEST}..."
-    wget -O /tmp/woodpecker-server "https://github.com/woodpecker-ci/woodpecker/releases/download/v${LATEST}/woodpecker-server_linux_amd64"
-    wget -O /tmp/woodpecker-agent "https://github.com/woodpecker-ci/woodpecker/releases/download/v${LATEST}/woodpecker-agent_linux_amd64"
-
-    # Stop services
-    echo "Stopping Woodpecker services..."
-    systemctl stop woodpecker-server woodpecker-agent
-
-    # Replace binaries
+    wget -q -O /tmp/woodpecker-server "https://github.com/woodpecker-ci/woodpecker/releases/download/v${LATEST}/woodpecker-server_linux_amd64"
+    wget -q -O /tmp/woodpecker-agent "https://github.com/woodpecker-ci/woodpecker/releases/download/v${LATEST}/woodpecker-agent_linux_amd64"
+    systemctl stop woodpecker-server woodpecker-agent 2>/dev/null || true
     chmod +x /tmp/woodpecker-server /tmp/woodpecker-agent
     mv /tmp/woodpecker-server /usr/local/bin/woodpecker-server
     mv /tmp/woodpecker-agent /usr/local/bin/woodpecker-agent
-
-    # Start services
-    echo "Starting Woodpecker services..."
-    systemctl start woodpecker-server woodpecker-agent
-
+    systemctl start woodpecker-server woodpecker-agent 2>/dev/null || true
     echo "✓ Woodpecker updated to ${LATEST}"
+}
+
+check_scrob() {
+    echo -n "Scrob: "
+    CURRENT=$(/usr/local/bin/scrob --version 2>/dev/null | grep -oP 'scrob \K[0-9.]+' || echo "unknown")
+    LATEST=$(curl -s https://api.github.com/repos/ducks/scrob/releases/latest | grep -oP '"tag_name": "v\K[^"]+')
+
+    if [ "$CURRENT" = "$LATEST" ]; then
+        echo -e "${GREEN}${CURRENT} (up to date)${NC}"
+        return 1
+    else
+        echo -e "${YELLOW}${CURRENT} -> ${LATEST} (update available)${NC}"
+        return 0
+    fi
+}
+
+update_scrob() {
+    echo "Updating Scrob..."
+    CURRENT=$(/usr/local/bin/scrob --version 2>/dev/null | grep -oP 'scrob \K[0-9.]+' || echo "unknown")
+    LATEST=$(curl -s https://api.github.com/repos/ducks/scrob/releases/latest | grep -oP '"tag_name": "v\K[^"]+')
+
+    if [ "$CURRENT" = "$LATEST" ]; then
+        echo "✓ Scrob is already up to date (${CURRENT})"
+        return
+    fi
+
+    echo "Downloading Scrob ${LATEST}..."
+    wget -q -O /usr/local/bin/scrob "https://github.com/ducks/scrob/releases/download/v${LATEST}/scrob-linux-x86_64"
+    chmod +x /usr/local/bin/scrob
+    systemctl restart scrob
+    echo "✓ Scrob updated to ${LATEST}"
 }
 
 update_caddy() {
@@ -145,41 +182,74 @@ update_caddy() {
     echo "✓ Caddy updated"
 }
 
-# Main update logic
-case "$SERVICE" in
-    gitea)
-        update_gitea
-        ;;
-    goatcounter)
-        update_goatcounter
-        ;;
-    woodpecker)
-        update_woodpecker
-        ;;
-    caddy)
-        update_caddy
-        ;;
-    all)
-        update_gitea
-        echo ""
-        update_goatcounter
-        echo ""
-        update_woodpecker
-        echo ""
-        update_caddy
-        ;;
-    *)
-        echo "❌ Unknown service: $SERVICE"
-        echo ""
-        echo "Usage: sudo ./bin/update [service]"
-        echo "  service: gitea, goatcounter, woodpecker, caddy, or all (default)"
-        exit 1
-        ;;
-esac
+# Main logic
+if [ "$MODE" = "check" ]; then
+    echo "Checking for updates..."
+    echo ""
 
-echo ""
-echo "=== Update Complete ==="
-echo ""
-echo "Service status:"
-systemctl status gitea caddy goatcounter-jg goatcounter-dv woodpecker-server woodpecker-agent --no-pager | grep -E "●|Active:"
-echo ""
+    UPDATES_AVAILABLE=0
+    check_gitea && UPDATES_AVAILABLE=1
+    check_goatcounter && UPDATES_AVAILABLE=1
+    check_woodpecker && UPDATES_AVAILABLE=1
+    check_scrob && UPDATES_AVAILABLE=1
+
+    echo ""
+    if [ $UPDATES_AVAILABLE -eq 1 ]; then
+        echo "To apply updates, run: sudo ./bin/update apply"
+    else
+        echo "✓ All services are up to date!"
+    fi
+
+elif [ "$MODE" = "apply" ]; then
+    case "$SERVICE" in
+        gitea)
+            update_gitea
+            ;;
+        goatcounter)
+            update_goatcounter
+            ;;
+        woodpecker)
+            update_woodpecker
+            ;;
+        scrob)
+            update_scrob
+            ;;
+        caddy)
+            update_caddy
+            ;;
+        all)
+            check_gitea && update_gitea
+            echo ""
+            check_goatcounter && update_goatcounter
+            echo ""
+            check_woodpecker && update_woodpecker
+            echo ""
+            check_scrob && update_scrob
+            echo ""
+            update_caddy
+            ;;
+        *)
+            echo "❌ Unknown service: $SERVICE"
+            echo ""
+            echo "Usage: sudo ./bin/update apply [service]"
+            echo "  service: gitea, goatcounter, woodpecker, scrob, caddy, or all (default)"
+            exit 1
+            ;;
+    esac
+
+    echo ""
+    echo "=== Update Complete ==="
+    echo ""
+    echo "Service status:"
+    systemctl status gitea caddy goatcounter-jg goatcounter-dv goatcounter-gv woodpecker-server woodpecker-agent scrob --no-pager | grep -E "●|Active:"
+    echo ""
+
+else
+    echo "❌ Unknown mode: $MODE"
+    echo ""
+    echo "Usage:"
+    echo "  sudo ./bin/update check           - Check for available updates"
+    echo "  sudo ./bin/update apply           - Apply all available updates"
+    echo "  sudo ./bin/update apply [service] - Apply update for specific service"
+    exit 1
+fi
