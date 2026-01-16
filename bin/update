@@ -108,6 +108,13 @@ update_goatcounter() {
     systemctl stop goatcounter-jg goatcounter-dv goatcounter-gv
     chmod +x /tmp/goatcounter
     mv /tmp/goatcounter /usr/local/bin/goatcounter
+
+    # Run database migrations for all instances
+    echo "Running database migrations..."
+    sudo -u goatcounter /usr/local/bin/goatcounter db migrate -db sqlite+/var/lib/goatcounter-jg/goatcounter.db 2>/dev/null || echo "  ✓ jg: no migrations needed"
+    sudo -u goatcounter /usr/local/bin/goatcounter db migrate -db sqlite+/var/lib/goatcounter-dv/goatcounter.db 2>/dev/null || echo "  ✓ dv: no migrations needed"
+    sudo -u goatcounter /usr/local/bin/goatcounter db migrate -db sqlite+/var/lib/goatcounter-gv/goatcounter.db 2>/dev/null || echo "  ✓ gv: no migrations needed"
+
     systemctl start goatcounter-jg goatcounter-dv goatcounter-gv
     echo "✓ GoatCounter updated to ${LATEST}"
 }
