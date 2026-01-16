@@ -22,7 +22,22 @@ SERVICE="${2:-all}"
 # Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+RED='\033[0;31m'
 NC='\033[0m' # No Color
+
+# Helper function for safe downloads
+safe_download() {
+    local url="$1"
+    local dest="$2"
+    local name="${3:-file}"
+
+    if ! wget -q -O "$dest" "$url"; then
+        echo -e "${RED}⚠️  Failed to download $name${NC}"
+        rm -f "$dest"
+        return 1
+    fi
+    return 0
+}
 
 check_gitea() {
     echo -n "Gitea: "
@@ -49,7 +64,10 @@ update_gitea() {
     fi
 
     echo "Downloading Gitea ${LATEST}..."
-    wget -q -O /tmp/gitea "https://dl.gitea.com/gitea/${LATEST}/gitea-${LATEST}-linux-amd64"
+    if ! safe_download "https://dl.gitea.com/gitea/${LATEST}/gitea-${LATEST}-linux-amd64" "/tmp/gitea" "Gitea ${LATEST}"; then
+        return 1
+    fi
+
     systemctl stop gitea
     chmod +x /tmp/gitea
     mv /tmp/gitea /usr/local/bin/gitea
@@ -82,7 +100,10 @@ update_goatcounter() {
     fi
 
     echo "Downloading GoatCounter ${LATEST}..."
-    wget -q -O /tmp/goatcounter.gz "https://github.com/arp242/goatcounter/releases/download/v${LATEST}/goatcounter-v${LATEST}-linux-amd64.gz"
+    if ! safe_download "https://github.com/arp242/goatcounter/releases/download/v${LATEST}/goatcounter-v${LATEST}-linux-amd64.gz" "/tmp/goatcounter.gz" "GoatCounter ${LATEST}"; then
+        return 1
+    fi
+
     gunzip -f /tmp/goatcounter.gz
     systemctl stop goatcounter-jg goatcounter-dv goatcounter-gv
     chmod +x /tmp/goatcounter
@@ -116,8 +137,14 @@ update_woodpecker() {
     fi
 
     echo "Downloading Woodpecker ${LATEST}..."
-    wget -q -O /tmp/woodpecker-server "https://github.com/woodpecker-ci/woodpecker/releases/download/v${LATEST}/woodpecker-server_linux_amd64"
-    wget -q -O /tmp/woodpecker-agent "https://github.com/woodpecker-ci/woodpecker/releases/download/v${LATEST}/woodpecker-agent_linux_amd64"
+    if ! safe_download "https://github.com/woodpecker-ci/woodpecker/releases/download/v${LATEST}/woodpecker-server_linux_amd64" "/tmp/woodpecker-server" "Woodpecker server ${LATEST}"; then
+        return 1
+    fi
+    if ! safe_download "https://github.com/woodpecker-ci/woodpecker/releases/download/v${LATEST}/woodpecker-agent_linux_amd64" "/tmp/woodpecker-agent" "Woodpecker agent ${LATEST}"; then
+        rm -f /tmp/woodpecker-server
+        return 1
+    fi
+
     systemctl stop woodpecker-server woodpecker-agent 2>/dev/null || true
     chmod +x /tmp/woodpecker-server /tmp/woodpecker-agent
     mv /tmp/woodpecker-server /usr/local/bin/woodpecker-server
@@ -151,7 +178,10 @@ update_scrob() {
     fi
 
     echo "Downloading Scrob ${LATEST}..."
-    wget -q -O /usr/local/bin/scrob "https://github.com/ducks/scrob/releases/download/v${LATEST}/scrob-linux-x86_64"
+    if ! safe_download "https://github.com/ducks/scrob/releases/download/v${LATEST}/scrob-linux-x86_64" "/usr/local/bin/scrob" "Scrob ${LATEST}"; then
+        return 1
+    fi
+
     chmod +x /usr/local/bin/scrob
     systemctl restart scrob
     echo "✓ Scrob updated to ${LATEST}"
@@ -218,15 +248,15 @@ elif [ "$MODE" = "apply" ]; then
             update_caddy
             ;;
         all)
-            check_gitea && update_gitea
+            check_gitea && update_gitea || true
             echo ""
-            check_goatcounter && update_goatcounter
+            check_goatcounter && update_goatcounter || true
             echo ""
-            check_woodpecker && update_woodpecker
+            check_woodpecker && update_woodpecker || true
             echo ""
-            check_scrob && update_scrob
+            check_scrob && update_scrob || true
             echo ""
-            update_caddy
+            update_caddy || true
             ;;
         *)
             echo "❌ Unknown service: $SERVICE"
