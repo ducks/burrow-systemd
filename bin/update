@@ -185,12 +185,14 @@ update_scrob() {
     fi
 
     echo "Downloading Scrob ${LATEST}..."
-    if ! safe_download "https://github.com/ducks/scrob/releases/download/v${LATEST}/scrob-linux-x86_64" "/usr/local/bin/scrob" "Scrob ${LATEST}"; then
+    if ! safe_download "https://github.com/ducks/scrob/releases/download/v${LATEST}/scrob-linux-x86_64" "/tmp/scrob" "Scrob ${LATEST}"; then
         return 1
     fi
 
-    chmod +x /usr/local/bin/scrob
-    systemctl restart scrob
+    systemctl stop scrob
+    chmod +x /tmp/scrob
+    mv /tmp/scrob /usr/local/bin/scrob
+    systemctl start scrob
     echo "✓ Scrob updated to ${LATEST}"
 }
 
