@@ -196,6 +196,41 @@ update_scrob() {
     echo "✓ Scrob updated to ${LATEST}"
 }
 
+check_scrob_ui() {
+    echo -n "Scrob UI: "
+    CURRENT=$(cat /var/www/scrob-ui/.version 2>/dev/null || echo "unknown")
+    LATEST=$(curl -s https://api.github.com/repos/ducks/scrob-ui/releases/latest | grep -oP '"tag_name": "v\K[^"]+')
+
+    if [ "$CURRENT" = "$LATEST" ]; then
+        echo -e "${GREEN}${CURRENT} (up to date)${NC}"
+        return 1
+    else
+        echo -e "${YELLOW}${CURRENT} -> ${LATEST} (update available)${NC}"
+        return 0
+    fi
+}
+
+update_scrob_ui() {
+    echo "Updating Scrob UI..."
+    CURRENT=$(cat /var/www/scrob-ui/.version 2>/dev/null || echo "unknown")
+    LATEST=$(curl -s https://api.github.com/repos/ducks/scrob-ui/releases/latest | grep -oP '"tag_name": "v\K[^"]+')
+
+    if [ "$CURRENT" = "$LATEST" ]; then
+        echo "✓ Scrob UI is already up to date (${CURRENT})"
+        return
+    fi
+
+    echo "Downloading Scrob UI ${LATEST}..."
+    if ! safe_download "https://github.com/ducks/scrob-ui/releases/download/v${LATEST}/scrob-ui-dist.tar.gz" "/tmp/scrob-ui-dist.tar.gz" "Scrob UI ${LATEST}"; then
+        return 1
+    fi
+
+    tar -xzf /tmp/scrob-ui-dist.tar.gz -C /var/www/scrob-ui
+    rm /tmp/scrob-ui-dist.tar.gz
+    echo "$LATEST" > /var/www/scrob-ui/.version
+    echo "✓ Scrob UI updated to ${LATEST}"
+}
+
 update_caddy() {
     echo "Updating Caddy..."
 
@@ -231,6 +266,7 @@ if [ "$MODE" = "check" ]; then
     check_goatcounter && UPDATES_AVAILABLE=1
     check_woodpecker && UPDATES_AVAILABLE=1
     check_scrob && UPDATES_AVAILABLE=1
+    check_scrob_ui && UPDATES_AVAILABLE=1
 
     echo ""
     if [ $UPDATES_AVAILABLE -eq 1 ]; then
@@ -253,6 +289,9 @@ elif [ "$MODE" = "apply" ]; then
         scrob)
             update_scrob
             ;;
+        scrob-ui)
+            update_scrob_ui
+            ;;
         caddy)
             update_caddy
             ;;
@@ -265,13 +304,15 @@ elif [ "$MODE" = "apply" ]; then
             echo ""
             check_scrob && update_scrob || true
             echo ""
+            check_scrob_ui && update_scrob_ui || true
+            echo ""
             update_caddy || true
             ;;
         *)
             echo "❌ Unknown service: $SERVICE"
             echo ""
             echo "Usage: sudo ./bin/update apply [service]"
-            echo "  service: gitea, goatcounter, woodpecker, scrob, caddy, or all (default)"
+            echo "  service: gitea, goatcounter, woodpecker, scrob, scrob-ui, caddy, or all (default)"
             exit 1
             ;;
     esac
